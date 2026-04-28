@@ -1,0 +1,80 @@
+# Chapter 19 sandbox: Postgres 17 with pgbouncer 1.21+ in front, configured
+# for transaction-pool mode and protocol-level prepared statements.
+#
+#   docker compose up -d
+#   psql -h localhost -p 5432 -U cinetrack -d cinetrack -f seed.sql       # direct
+#   psql -h localhost -p 6432 -U cinetrack -d cinetrack -f pooling-tour.sql  # via pgbouncer
+#
+# Two ports are exposed on purpose:
+#   5432 -> Postgres directly (used to seed and to compare behavior)
+#   6432 -> pgbouncer (the port the application should use)
+#
+# init.sql runs automatically on first boot via docker-entrypoint.
+# Drop the volume with `docker compose down -v` for a fresh sandbox.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: cinetrack-pg-ch19
+    environment:
+      POSTGRES_USER: cinetrack
+      POSTGRES_PASSWORD: cinetrack
+      POSTGRES_DB: cinetrack
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=200"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "log_min_messages=info"
+      - "-c"
+      - "log_connections=on"
+      - "-c"
+      - "log_disconnections=on"
+    ports:
+      - "5432:5432"
+    volumes:
+      - cinetrack_pg_data_ch19:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cinetrack -d cinetrack"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # NOTE: edoburu/pgbouncer generates its own pgbouncer.ini at startup from
+  # the environment variables below and ignores any pgbouncer.ini you mount.
+  # The mounted ./pgbouncer.ini is reference-only (it documents the production
+  # shape of the config). The envs here are what actually drive the running
+  # pooler. Switch to bitnami/pgbouncer or cybertec/pgbouncer if you want the
+  # INI mount to be authoritative. AUTH_TYPE=md5 keeps the sandbox compatible
+  # with the plaintext password in userlist.txt; production should use
+  # scram-sha-256 with a SCRAM secret in userlist.txt.
+  pgbouncer:
+    image: edoburu/pgbouncer:1.22.1-p0
+    container_name: cinetrack-pgb-ch19
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: cinetrack
+      DB_PASSWORD: cinetrack
+      DB_NAME: cinetrack
+      AUTH_TYPE: md5
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "2000"
+      DEFAULT_POOL_SIZE: "25"
+      MAX_PREPARED_STATEMENTS: "256"
+      ADMIN_USERS: cinetrack
+      LISTEN_PORT: "6432"
+    ports:
+      - "6432:6432"
+    volumes:
+      - ./pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
+      - ./userlist.txt:/etc/pgbouncer/userlist.txt:ro
+
+volumes:
+  cinetrack_pg_data_ch19:

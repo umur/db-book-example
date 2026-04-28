@@ -1,0 +1,110 @@
+# Patroni configuration template for the cinetrack chapter-25 sandbox.
+# Spilo (the upstream Zalando image) builds the final patroni.yml by
+# substituting environment variables into this template at container
+# start. The values below are the production-correct defaults for a
+# three-node cluster with synchronous replication and a watchdog.
+#
+# DO NOT copy this verbatim into a real production environment without
+# also: (1) configuring TLS for etcd, (2) setting REST API authentication,
+# (3) using real passwords from a secret store, (4) verifying the
+# /dev/watchdog device exists on every host.
+
+scope: cinetrack
+name: ${PATRONI_NAME}
+
+restapi:
+  listen: 0.0.0.0:8008
+  connect_address: ${PATRONI_RESTAPI_CONNECT_ADDRESS}
+  # In production: enable authentication.
+  # authentication:
+  #   username: patroni
+  #   password: ${PATRONI_REST_PASSWORD}
+
+etcd3:
+  hosts: ${ETCD3_HOSTS}
+
+bootstrap:
+  dcs:
+    # The failover timing budget. ttl=30 means the cluster tolerates 30
+    # seconds of leader silence before declaring it dead. loop_wait=10 is
+    # how often the leader renews. retry_timeout=10 is how long Patroni
+    # will keep trying to talk to etcd before self-demoting.
+    ttl: 30
+    loop_wait: 10
+    retry_timeout: 10
+    maximum_lag_on_failover: 1048576   # 1 MiB; replicas further behind cannot promote
+
+    # Synchronous replication, strict mode. The cluster refuses writes
+    # when no sync replica is available, rather than silently falling
+    # back to async. This is the lossless setting.
+    synchronous_mode: true
+    synchronous_mode_strict: true
+    synchronous_node_count: 1
+
+    postgresql:
+      use_pg_rewind: true
+      use_slots: true
+      parameters:
+        wal_level: replica
+        hot_standby: 'on'
+        max_wal_senders: 10
+        max_replication_slots: 10
+        wal_keep_size: 1GB
+        archive_mode: 'on'
+        archive_command: '/bin/true'   # sandbox: discard. In production, ship to S3.
+        synchronous_commit: 'on'
+        # Logging that helps post-incident debugging.
+        log_replication_commands: 'on'
+        log_min_messages: notice
+        log_lock_waits: 'on'
+        log_checkpoints: 'on'
+
+  initdb:
+    - encoding: UTF8
+    - data-checksums
+
+  pg_hba:
+    - host replication replicator 0.0.0.0/0 md5
+    - host all all 0.0.0.0/0 md5
+
+  users:
+    cinetrack:
+      password: cinetrack
+      options:
+        - createrole
+        - createdb
+
+postgresql:
+  listen: 0.0.0.0:5432
+  connect_address: ${PATRONI_POSTGRESQL_CONNECT_ADDRESS}
+  data_dir: /home/postgres/pgdata/pgroot/data
+  pgpass: /tmp/.pgpass
+  authentication:
+    superuser:
+      username: postgres
+      password: postgres
+    replication:
+      username: replicator
+      password: replicator
+  parameters:
+    unix_socket_directories: '/var/run/postgresql'
+
+# Watchdog: the in-process safety net that bounds the split-brain window
+# to zero. mode: required means Patroni refuses to become leader if the
+# watchdog cannot be opened. safety_margin: 5 sets the kernel watchdog
+# timer to ttl - 5 = 25 seconds, so the host reboots before the lease
+# expires.
+#
+# In the Docker sandbox the watchdog device is not available, so this is
+# commented out. Uncomment for real deployments.
+#
+# watchdog:
+#   mode: required
+#   device: /dev/watchdog
+#   safety_margin: 5
+
+tags:
+  nofailover: false
+  noloadbalance: false
+  clonefrom: false
+  nosync: false

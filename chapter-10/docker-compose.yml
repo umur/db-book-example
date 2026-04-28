@@ -1,0 +1,42 @@
+# Chapter 10 sandbox: Postgres 17 with cinetrack scaled for the specialty
+# index tour. The view_events table is the BRIN demo target; it uses a
+# generate_series of 10M rows to make BRIN's size win visible.
+#
+#   docker compose up -d
+#   psql -h localhost -U cinetrack -d cinetrack -f init.sql
+#   psql -h localhost -U cinetrack -d cinetrack -f extensions.sql
+#   psql -h localhost -U cinetrack -d cinetrack -f seed.sql
+#   psql -h localhost -U cinetrack -d cinetrack -f specialty-tour.sql
+#
+# `docker compose down -v` drops the named volume for a fresh sandbox.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: cinetrack-pg-ch10
+    environment:
+      POSTGRES_USER: cinetrack
+      POSTGRES_PASSWORD: cinetrack
+      POSTGRES_DB: cinetrack
+    ports:
+      - "5432:5432"
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "work_mem=32MB"
+      - "-c"
+      - "maintenance_work_mem=256MB"
+    volumes:
+      - cinetrack_pg_data_ch10:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./extensions.sql:/docker-entrypoint-initdb.d/02-extensions.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cinetrack -d cinetrack"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  cinetrack_pg_data_ch10:

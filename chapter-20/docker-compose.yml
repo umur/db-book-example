@@ -1,0 +1,60 @@
+# Chapter 20 sandbox: Postgres 17 with cinetrack, pg_stat_statements, and
+# auto_explain preloaded so the slow-query workflow can be walked end to end.
+#
+#   docker compose up -d
+#   psql -h localhost -U cinetrack -d cinetrack -f init.sql
+#   psql -h localhost -U cinetrack -d cinetrack -f seed.sql
+#   psql -h localhost -U cinetrack -d cinetrack -f monitoring-tour.sql
+#
+# extensions.sql runs automatically on first boot via docker-entrypoint.
+# Drop the volume with `docker compose down -v` for a fresh sandbox.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: cinetrack-pg-ch20
+    environment:
+      POSTGRES_USER: cinetrack
+      POSTGRES_PASSWORD: cinetrack
+      POSTGRES_DB: cinetrack
+    ports:
+      - "5432:5432"
+    volumes:
+      - cinetrack_pg_data_ch20:/var/lib/postgresql/data
+      - ./extensions.sql:/docker-entrypoint-initdb.d/01-extensions.sql:ro
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_preload_libraries=pg_stat_statements,auto_explain"
+      - "-c"
+      - "pg_stat_statements.max=10000"
+      - "-c"
+      - "pg_stat_statements.track=all"
+      - "-c"
+      - "auto_explain.log_min_duration=500"
+      - "-c"
+      - "auto_explain.log_analyze=on"
+      - "-c"
+      - "auto_explain.log_buffers=on"
+      - "-c"
+      - "auto_explain.log_timing=on"
+      - "-c"
+      - "auto_explain.log_nested_statements=on"
+      - "-c"
+      - "auto_explain.log_format=text"
+      - "-c"
+      - "track_io_timing=on"
+      - "-c"
+      - "log_lock_waits=on"
+      - "-c"
+      - "deadlock_timeout=1s"
+      - "-c"
+      - "idle_in_transaction_session_timeout=60000"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cinetrack -d cinetrack"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  cinetrack_pg_data_ch20:

@@ -1,0 +1,48 @@
+# Chapter 7 sandbox: Postgres 17 sized so the planner has interesting choices.
+#
+#   docker compose up -d
+#   psql -h localhost -U cinetrack -d cinetrack -f init.sql
+#   psql -h localhost -U cinetrack -d cinetrack -f seed.sql
+#   psql -h localhost -U cinetrack -d cinetrack -f planner-tour.sql
+#
+# The dataset is large enough (50k movies, 500k ratings, 500k view_events with
+# correlated columns) that selectivity, MCVs, and extended statistics produce
+# different plans. The settings track section 7.6 so you can flip them mid-tour.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: cinetrack-pg-ch07
+    environment:
+      POSTGRES_USER: cinetrack
+      POSTGRES_PASSWORD: cinetrack
+      POSTGRES_DB: cinetrack
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "work_mem=8MB"
+      - "-c"
+      - "maintenance_work_mem=64MB"
+      - "-c"
+      - "effective_cache_size=512MB"
+      - "-c"
+      - "random_page_cost=4.0"
+      - "-c"
+      - "default_statistics_target=100"
+      - "-c"
+      - "track_io_timing=on"
+    ports:
+      - "5432:5432"
+    volumes:
+      - cinetrack_pg_data_ch07:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cinetrack -d cinetrack"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  cinetrack_pg_data_ch07:

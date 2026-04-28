@@ -1,0 +1,42 @@
+# Chapter 27 sandbox: Postgres 17 with a representative production-profile config.
+#
+#   docker compose up -d
+#   psql -h localhost -U cinetrack -d cinetrack -f init.sql
+#   psql -h localhost -U cinetrack -d cinetrack -f seed.sql
+#   psql -h localhost -U cinetrack -d cinetrack -f tuning-tour.sql
+#
+# The mounted postgresql.conf.tuned is the same one-screen config the chapter
+# describes as "the entire production-profile config for the cinetrack workload."
+# It assumes a host with at least 16 GB of RAM. On a smaller laptop, comment
+# out the shared_buffers and effective_cache_size lines and the container will
+# fall back to its built-in defaults.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: cinetrack-pg-ch27
+    environment:
+      POSTGRES_USER: cinetrack
+      POSTGRES_PASSWORD: cinetrack
+      POSTGRES_DB: cinetrack
+    command:
+      - "postgres"
+      - "-c"
+      - "config_file=/etc/postgresql/postgresql.conf"
+    ports:
+      - "5432:5432"
+    volumes:
+      - cinetrack_pg_data_ch27:/var/lib/postgresql/data
+      - ./postgresql.conf.tuned:/etc/postgresql/postgresql.conf:ro
+      - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    shm_size: "1gb"
+    ulimits:
+      memlock: -1
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cinetrack -d cinetrack"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  cinetrack_pg_data_ch27:

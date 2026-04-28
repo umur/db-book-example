@@ -1,0 +1,113 @@
+# Chapter 23 sandbox: a three-tier streaming replication topology.
+#
+#   primary  ---> standby (direct from primary)
+#                    |
+#                    v
+#                 cascade (streams from standby, not from primary)
+#
+# Bring it up:
+#
+#   docker compose up -d
+#   ./bootstrap.sh        # the README walks through what this does
+#
+# Run the tour:
+#
+#   psql -h localhost -p 5432 -U cinetrack -d cinetrack -f streaming-tour.sql
+#
+# The three Postgres services share a network and resolve each other by
+# container name. The bootstrap step uses pg_basebackup from the primary
+# to seed the standby, and from the standby to seed the cascade.
+
+services:
+  primary:
+    image: postgres:17-alpine
+    container_name: cinetrack-pg-ch23-primary
+    environment:
+      POSTGRES_USER: cinetrack
+      POSTGRES_PASSWORD: cinetrack
+      POSTGRES_DB: cinetrack
+    ports:
+      - "5432:5432"
+    volumes:
+      - cinetrack_pg_data_ch23_primary:/var/lib/postgresql/data
+      - ./00-pg-hba-replication.sh:/docker-entrypoint-initdb.d/00-pg-hba-replication.sh:ro
+      - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=replica"
+      - "-c"
+      - "max_wal_senders=10"
+      - "-c"
+      - "max_replication_slots=10"
+      - "-c"
+      - "wal_keep_size=512MB"
+      - "-c"
+      - "hot_standby=on"
+      - "-c"
+      - "log_replication_commands=on"
+      - "-c"
+      - "log_min_messages=info"
+      - "-c"
+      - "listen_addresses=*"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cinetrack -d cinetrack"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  standby:
+    image: postgres:17-alpine
+    container_name: cinetrack-pg-ch23-standby
+    environment:
+      POSTGRES_USER: cinetrack
+      POSTGRES_PASSWORD: cinetrack
+      POSTGRES_DB: cinetrack
+      PRIMARY_HOST: primary
+      REPLICATION_USER: replicator
+      REPLICATION_PASSWORD: replicator-secret
+    ports:
+      - "5433:5432"
+    volumes:
+      - cinetrack_pg_data_ch23_standby:/var/lib/postgresql/data
+      - ./bootstrap-standby.sh:/bootstrap-standby.sh:ro
+    entrypoint: ["/bootstrap-standby.sh"]
+    depends_on:
+      primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cinetrack -d cinetrack"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  cascade:
+    image: postgres:17-alpine
+    container_name: cinetrack-pg-ch23-cascade
+    environment:
+      POSTGRES_USER: cinetrack
+      POSTGRES_PASSWORD: cinetrack
+      POSTGRES_DB: cinetrack
+      PARENT_HOST: standby
+      REPLICATION_USER: replicator
+      REPLICATION_PASSWORD: replicator-secret
+    ports:
+      - "5434:5432"
+    volumes:
+      - cinetrack_pg_data_ch23_cascade:/var/lib/postgresql/data
+      - ./bootstrap-cascade.sh:/bootstrap-cascade.sh:ro
+    entrypoint: ["/bootstrap-cascade.sh"]
+    depends_on:
+      standby:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cinetrack -d cinetrack"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  cinetrack_pg_data_ch23_primary:
+  cinetrack_pg_data_ch23_standby:
+  cinetrack_pg_data_ch23_cascade:
