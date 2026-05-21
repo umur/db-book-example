@@ -1,0 +1,50 @@
+# Chapter 5 sandbox: Postgres 17 wired up to demo memory and the buffer cache.
+#
+# init.sql is mounted into /docker-entrypoint-initdb.d and runs automatically
+# the first time the container starts. You only need:
+#
+#   docker compose up -d
+#   psql -h localhost -U cinetrack -d cinetrack -f seed.sql
+#   psql -h localhost -U cinetrack -d cinetrack -f memory-tour.sql
+#
+# The settings below are intentionally small. They make spills, cache evictions,
+# and per-backend memory math observable on a laptop. Production values look
+# very different.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: cinetrack-pg-ch05
+    environment:
+      POSTGRES_USER: cinetrack
+      POSTGRES_PASSWORD: cinetrack
+      POSTGRES_DB: cinetrack
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "work_mem=8MB"
+      - "-c"
+      - "maintenance_work_mem=64MB"
+      - "-c"
+      - "effective_cache_size=512MB"
+      - "-c"
+      - "log_min_messages=info"
+      - "-c"
+      - "log_temp_files=0"
+      - "-c"
+      - "track_io_timing=on"
+    ports:
+      - "5432:5432"
+    volumes:
+      - cinetrack_pg_data_ch05:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cinetrack -d cinetrack"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  cinetrack_pg_data_ch05:

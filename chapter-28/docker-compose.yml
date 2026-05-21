@@ -1,0 +1,140 @@
+# Chapter 28 sandbox: a single Postgres 17 primary with a Citus add-on
+# sketch (commented). The chapter is mostly runbooks; this sandbox is
+# what you bring up to reproduce each scenario in runbooks/.
+#
+#   docker compose up -d
+#
+# Wait ~10 seconds for Postgres to bootstrap, then:
+#
+#   docker exec -it ch28-postgres psql -U cinetrack -d cinetrack -f /seed.sql
+#
+# Each runbook file in runbooks/ has its own reproduction recipe. Bring
+# this sandbox up first; the runbook files assume the Postgres container
+# is running and reachable on host port 5432.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: ch28-postgres
+    environment:
+      POSTGRES_USER: cinetrack
+      POSTGRES_PASSWORD: cinetrack
+      POSTGRES_DB: cinetrack
+      # Tight settings on purpose. The runbooks reproduce production
+      # incidents on a small box; the sandbox reflects that.
+      POSTGRES_INITDB_ARGS: >-
+        --data-checksums
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=64MB
+      - -c
+      - max_connections=50
+      - -c
+      - autovacuum_naptime=10s
+      - -c
+      - log_min_duration_statement=500
+      - -c
+      - log_checkpoints=on
+      - -c
+      - log_lock_waits=on
+      - -c
+      - log_temp_files=0
+      - -c
+      - track_io_timing=on
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=all
+      - -c
+      - wal_level=replica
+      - -c
+      - max_wal_senders=4
+      - -c
+      - max_replication_slots=4
+      - -c
+      - hot_standby=on
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./seed.sql:/seed.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cinetrack -d cinetrack"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # A second Postgres node, configured as a read replica of `postgres`.
+  # Used by runbooks/replication-broke.md to reproduce a stuck standby.
+  # Brought up by the runbook with `docker compose up -d standby`; not
+  # started by default to keep the sandbox lightweight.
+  standby:
+    image: postgres:17-alpine
+    container_name: ch28-standby
+    environment:
+      POSTGRES_USER: cinetrack
+      POSTGRES_PASSWORD: cinetrack
+      PRIMARY_HOST: postgres
+      PRIMARY_PORT: "5432"
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        if [ ! -s /var/lib/postgresql/data/PG_VERSION ]; then
+          PGPASSWORD=replicator pg_basebackup \
+            -h postgres -p 5432 -U replicator \
+            -D /var/lib/postgresql/data -R -P -X stream \
+            --slot=ch28_standby
+        fi
+        exec docker-entrypoint.sh postgres -c hot_standby=on
+    volumes:
+      - standby_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - replication
+
+  # Citus add-on sketch. Uncomment to bring up a coordinator and two
+  # workers using the official Citus image. This is intentionally a
+  # sketch, not a production-shaped cluster: it runs Citus on Postgres
+  # 17 with default settings, and is here so the chapter can reference
+  # a concrete reproduction without making the sandbox heavy.
+  #
+  # citus-coordinator:
+  #   image: citusdata/citus:13.0
+  #   container_name: ch28-citus-coordinator
+  #   environment:
+  #     POSTGRES_USER: cinetrack
+  #     POSTGRES_PASSWORD: cinetrack
+  #     POSTGRES_DB: cinetrack
+  #   ports:
+  #     - "5434:5432"
+  #
+  # citus-worker-1:
+  #   image: citusdata/citus:13.0
+  #   container_name: ch28-citus-worker-1
+  #   environment:
+  #     POSTGRES_USER: cinetrack
+  #     POSTGRES_PASSWORD: cinetrack
+  #     POSTGRES_DB: cinetrack
+  #
+  # citus-worker-2:
+  #   image: citusdata/citus:13.0
+  #   container_name: ch28-citus-worker-2
+  #   environment:
+  #     POSTGRES_USER: cinetrack
+  #     POSTGRES_PASSWORD: cinetrack
+  #     POSTGRES_DB: cinetrack
+
+volumes:
+  pg_data:
+  standby_data:

@@ -1,0 +1,32 @@
+# Chapter 14 sandbox: Postgres 17 with the cinetrack schema, plus a sized
+# view_events table for the partitioning walkthrough.
+#
+#   docker compose up -d
+#   psql -h localhost -U cinetrack -d cinetrack -f init.sql
+#   psql -h localhost -U cinetrack -d cinetrack -f seed.sql
+#   psql -h localhost -U cinetrack -d cinetrack -f partitioning-tour.sql
+#
+# The named volume keeps your data across container restarts. Drop it with
+# `docker compose down -v` when you want a fresh sandbox.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: cinetrack-pg-ch14
+    environment:
+      POSTGRES_USER: cinetrack
+      POSTGRES_PASSWORD: cinetrack
+      POSTGRES_DB: cinetrack
+    ports:
+      - "5432:5432"
+    volumes:
+      - cinetrack_pg_data_ch14:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cinetrack -d cinetrack"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  cinetrack_pg_data_ch14:

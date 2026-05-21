@@ -1,0 +1,48 @@
+# Chapter 4 sandbox: Postgres 17 with the cinetrack schema, configured to log
+# checkpoints so you can see the WAL machinery work in real time.
+#
+#   docker compose up -d
+#   psql -h localhost -U cinetrack -d cinetrack -f seed.sql
+#   psql -h localhost -U cinetrack -d cinetrack -f wal-tour.sql
+#
+# Watch the checkpoint log lines stream past:
+#
+#   docker logs -f cinetrack-pg-ch04
+#
+# Drop the volume with `docker compose down -v` for a fresh sandbox.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: cinetrack-pg-ch04
+    environment:
+      POSTGRES_USER: cinetrack
+      POSTGRES_PASSWORD: cinetrack
+      POSTGRES_DB: cinetrack
+    ports:
+      - "5432:5432"
+    volumes:
+      - cinetrack_pg_data_ch04:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    command:
+      - "postgres"
+      - "-c"
+      - "log_checkpoints=on"
+      - "-c"
+      - "log_min_messages=info"
+      - "-c"
+      - "checkpoint_timeout=60s"
+      - "-c"
+      - "max_wal_size=128MB"
+      - "-c"
+      - "checkpoint_completion_target=0.9"
+      - "-c"
+      - "wal_level=replica"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cinetrack -d cinetrack"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  cinetrack_pg_data_ch04:

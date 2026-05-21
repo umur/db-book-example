@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.umurinan.dbbook.Chapter18IT
+-------------------------------------------------------------------------------
+Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 9.824 s -- in com.umurinan.dbbook.Chapter18IT

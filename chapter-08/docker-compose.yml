@@ -1,0 +1,40 @@
+# Chapter 8 sandbox: Postgres 17 with the cinetrack schema, scaled up for EXPLAIN walkthroughs.
+#
+#   docker compose up -d
+#   psql -h localhost -U cinetrack -d cinetrack -f init.sql
+#   psql -h localhost -U cinetrack -d cinetrack -f seed.sql
+#   psql -h localhost -U cinetrack -d cinetrack -f explain-walkthroughs.sql
+#
+# The seed builds ~50,000 movies and ~500,000 ratings: large enough for
+# misplans to bite, small enough to fit on a laptop. Drop the volume with
+# `docker compose down -v` for a fresh sandbox.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: cinetrack-pg-ch08
+    environment:
+      POSTGRES_USER: cinetrack
+      POSTGRES_PASSWORD: cinetrack
+      POSTGRES_DB: cinetrack
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "work_mem=8MB"
+      - "-c"
+      - "track_io_timing=on"
+    ports:
+      - "5432:5432"
+    volumes:
+      - cinetrack_pg_data_ch08:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cinetrack -d cinetrack"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  cinetrack_pg_data_ch08:

@@ -1,0 +1,48 @@
+# cinetrack chapter-27: production-profile postgresql.conf
+# Target host: 64 GB RAM, NVMe storage, dedicated database server.
+# This file is the entire tuned config. Everything else uses defaults.
+
+# --- Connections -----------------------------------------------------------
+listen_addresses = '*'
+max_connections = 200
+superuser_reserved_connections = 5
+
+# --- Memory ----------------------------------------------------------------
+# Production target on a 64 GB host:
+#   shared_buffers = 16GB           # 25% of 64 GB RAM
+#   effective_cache_size = 48GB     # 75% of RAM, planner hint only
+# The lines below are scaled down so the sandbox starts on an 8 GB Docker host.
+# Restore the production values when running on a real database server.
+shared_buffers = 1GB                     # 25% of 4 GB available to the container
+work_mem = 32MB                          # per sort/hash op, per backend
+maintenance_work_mem = 256MB             # per maintenance process
+effective_cache_size = 3GB               # 75% of RAM, planner hint only
+huge_pages = try                         # set to 'on' once verified
+
+# --- WAL and checkpoints ---------------------------------------------------
+max_wal_size = 16GB
+min_wal_size = 2GB
+checkpoint_timeout = 15min
+checkpoint_completion_target = 0.9
+wal_compression = zstd
+
+# --- Planner ---------------------------------------------------------------
+random_page_cost = 1.1                   # NVMe: random reads are nearly free
+effective_io_concurrency = 200           # NVMe prefetch concurrency
+
+# --- Parallelism -----------------------------------------------------------
+max_worker_processes = 16
+max_parallel_workers = 16
+max_parallel_workers_per_gather = 4
+max_parallel_maintenance_workers = 4
+
+# --- Autovacuum ------------------------------------------------------------
+autovacuum_max_workers = 6
+autovacuum_vacuum_scale_factor = 0.05
+
+# --- Logging ---------------------------------------------------------------
+log_min_duration_statement = 250ms
+log_temp_files = 0
+log_lock_waits = on
+log_checkpoints = on
+log_autovacuum_min_duration = 1s

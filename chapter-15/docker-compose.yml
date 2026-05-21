@@ -1,0 +1,42 @@
+# Chapter 15 sandbox: Postgres 17 with the cinetrack schema, ready to demo
+# isolation levels and locking under contention.
+#
+#   docker compose up -d
+#   psql -h localhost -U cinetrack -d cinetrack -f init.sql
+#   psql -h localhost -U cinetrack -d cinetrack -f seed.sql
+#
+# Most of the demos in isolation-tour.sql require TWO psql sessions running
+# side by side. Open two terminals before you start.
+#
+# The named volume keeps your data across container restarts. Drop it with
+# `docker compose down -v` when you want a fresh sandbox.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: cinetrack-pg-ch15
+    environment:
+      POSTGRES_USER: cinetrack
+      POSTGRES_PASSWORD: cinetrack
+      POSTGRES_DB: cinetrack
+    command:
+      - "postgres"
+      - "-c"
+      - "log_lock_waits=on"
+      - "-c"
+      - "deadlock_timeout=1s"
+      - "-c"
+      - "log_min_messages=notice"
+    ports:
+      - "5432:5432"
+    volumes:
+      - cinetrack_pg_data_ch15:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cinetrack -d cinetrack"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  cinetrack_pg_data_ch15:

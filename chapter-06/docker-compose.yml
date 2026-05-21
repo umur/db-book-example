@@ -1,0 +1,47 @@
+# Chapter 6 sandbox: Postgres 17 wired up to demo indexes, B-tree internals,
+# and the visibility map.
+#
+#   docker compose up -d
+#   psql -h localhost -U cinetrack -d cinetrack -f seed.sql
+#   psql -h localhost -U cinetrack -d cinetrack -f extensions.sql
+#   psql -h localhost -U cinetrack -d cinetrack -f index-tour.sql
+#
+# autovacuum is left at defaults so the visibility map demo can show it
+# flipping pages to all-visible after a manual VACUUM. log_min_messages
+# stays at info so VACUUM output is visible in the container logs.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: cinetrack-pg-ch06
+    environment:
+      POSTGRES_USER: cinetrack
+      POSTGRES_PASSWORD: cinetrack
+      POSTGRES_DB: cinetrack
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "work_mem=8MB"
+      - "-c"
+      - "maintenance_work_mem=64MB"
+      - "-c"
+      - "effective_cache_size=512MB"
+      - "-c"
+      - "log_min_messages=info"
+      - "-c"
+      - "track_io_timing=on"
+    ports:
+      - "5432:5432"
+    volumes:
+      - cinetrack_pg_data_ch06:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cinetrack -d cinetrack"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  cinetrack_pg_data_ch06:

@@ -1,0 +1,13 @@
+; pgbouncer userlist for chapter 19.
+; Format: "username" "password-or-scram-secret"
+;
+; The sandbox is configured with auth_type = md5 (see pgbouncer.ini), which
+; accepts a plaintext password here so the chapter boots with no extra setup.
+; In production switch auth_type to scram-sha-256 and replace the plaintext
+; below with the SCRAM-SHA-256 secret Postgres itself generates:
+;
+;   SELECT rolname, rolpassword FROM pg_authid WHERE rolname = 'cinetrack';
+;
+; The rolpassword string starts with SCRAM-SHA-256$<iter>$<salt>:<stored> and
+; is what pgbouncer expects when auth_type = scram-sha-256.
+"cinetrack" "cinetrack"

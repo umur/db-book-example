@@ -1,0 +1,97 @@
+# Chapter 22 sandbox: a Postgres 17 primary plus a streaming standby, wired
+# up so the chapter's slot, lag, and decoder demos all run end-to-end.
+#
+#   docker compose up -d
+#   psql -h localhost -p 5432 -U cinetrack -d cinetrack -f seed.sql
+#   psql -h localhost -p 5432 -U cinetrack -d cinetrack -f replication-tour.sql
+#
+# Connect to the standby on a separate port to run read-only queries:
+#
+#   psql -h localhost -p 5433 -U cinetrack -d cinetrack
+#
+# The named volumes keep data across restarts. Drop them with
+# `docker compose down -v` for a fresh sandbox.
+
+services:
+  primary:
+    image: postgres:17-alpine
+    container_name: cinetrack-pg-ch22-primary
+    environment:
+      POSTGRES_USER: cinetrack
+      POSTGRES_PASSWORD: cinetrack
+      POSTGRES_DB: cinetrack
+    ports:
+      - "5432:5432"
+    volumes:
+      - cinetrack_pg_data_ch22_primary:/var/lib/postgresql/data
+      - ./00-pg-hba-replication.sh:/docker-entrypoint-initdb.d/00-pg-hba-replication.sh:ro
+      - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=logical"
+      - "-c"
+      - "max_wal_senders=10"
+      - "-c"
+      - "max_replication_slots=10"
+      - "-c"
+      - "hot_standby=on"
+      - "-c"
+      - "log_replication_commands=on"
+      - "-c"
+      - "log_min_messages=info"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cinetrack -d cinetrack"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  standby:
+    image: postgres:17-alpine
+    container_name: cinetrack-pg-ch22-standby
+    depends_on:
+      primary:
+        condition: service_healthy
+    environment:
+      PGUSER: cinetrack
+      PGPASSWORD: cinetrack
+      PGDATABASE: cinetrack
+    ports:
+      - "5433:5432"
+    volumes:
+      - cinetrack_pg_data_ch22_standby:/var/lib/postgresql/data
+    # Bring the standby up by:
+    #   1) running pg_basebackup against the primary on first boot only,
+    #   2) writing standby.signal so Postgres starts in recovery,
+    #   3) launching postgres pointing at the streamed data directory.
+    entrypoint:
+      - "bash"
+      - "-c"
+      - |
+        set -e
+        if [ ! -s "$$PGDATA/PG_VERSION" ]; then
+          echo "Bootstrapping standby with pg_basebackup..."
+          mkdir -p "$$PGDATA"
+          chown -R postgres:postgres "$$PGDATA"
+          chmod 700 "$$PGDATA"
+          su postgres -c "pg_basebackup \
+              --host=primary --port=5432 --username=cinetrack \
+              --pgdata=$$PGDATA --wal-method=stream \
+              --slot=standby_1 --create-slot \
+              --write-recovery-conf --progress --verbose"
+          touch "$$PGDATA/standby.signal"
+          chown postgres:postgres "$$PGDATA/standby.signal"
+        fi
+        exec su postgres -c "postgres \
+            -c hot_standby=on \
+            -c primary_conninfo='host=primary port=5432 user=cinetrack password=cinetrack application_name=standby_1' \
+            -c primary_slot_name=standby_1"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cinetrack -d cinetrack"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  cinetrack_pg_data_ch22_primary:
+  cinetrack_pg_data_ch22_standby:
