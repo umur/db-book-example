@@ -26,8 +26,8 @@ Twenty-eight chapters on Postgres 17 in pure SQL. No Spring, no JPA, no Hibernat
 ## Quick start
 
 ```bash
-git clone https://github.com/umur/postgres-example
-cd postgres-example/chapter-01
+git clone https://github.com/umur/db-book-example
+cd db-book-example/chapter-01
 docker compose up -d
 psql -h localhost -U cinetrack -d cinetrack -f schema.sql
 psql -h localhost -U cinetrack -d cinetrack -f seed.sql
